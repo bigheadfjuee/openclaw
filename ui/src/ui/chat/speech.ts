@@ -57,56 +57,62 @@ export function startStt(callbacks: SttCallbacks): boolean {
 
   stopStt();
 
-  const recognition = new Ctor();
-  recognition.continuous = true;
-  recognition.interimResults = true;
-  recognition.lang = navigator.language || "en-US";
+  try {
+    const recognition = new Ctor();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = navigator.language || "en-US";
 
-  recognition.addEventListener("start", () => callbacks.onStart?.());
+    recognition.addEventListener("start", () => callbacks.onStart?.());
 
-  recognition.addEventListener("result", (event) => {
-    const speechEvent = event as unknown as SpeechRecognitionEvent;
-    let interimTranscript = "";
-    let finalTranscript = "";
+    recognition.addEventListener("result", (event) => {
+      const speechEvent = event as unknown as SpeechRecognitionEvent;
+      let interimTranscript = "";
+      let finalTranscript = "";
 
-    for (let i = speechEvent.resultIndex; i < speechEvent.results.length; i++) {
-      const result = speechEvent.results[i];
-      if (!result?.[0]) {
-        continue;
+      for (let i = speechEvent.resultIndex; i < speechEvent.results.length; i++) {
+        const result = speechEvent.results[i];
+        if (!result?.[0]) {
+          continue;
+        }
+        const transcript = result[0].transcript;
+        if (result.isFinal) {
+          finalTranscript += transcript;
+        } else {
+          interimTranscript += transcript;
+        }
       }
-      const transcript = result[0].transcript;
-      if (result.isFinal) {
-        finalTranscript += transcript;
-      } else {
-        interimTranscript += transcript;
+
+      if (finalTranscript) {
+        callbacks.onTranscript(finalTranscript, true);
+      } else if (interimTranscript) {
+        callbacks.onTranscript(interimTranscript, false);
       }
-    }
+    });
 
-    if (finalTranscript) {
-      callbacks.onTranscript(finalTranscript, true);
-    } else if (interimTranscript) {
-      callbacks.onTranscript(interimTranscript, false);
-    }
-  });
+    recognition.addEventListener("error", (event) => {
+      const speechEvent = event as unknown as SpeechRecognitionErrorEvent;
+      if (speechEvent.error === "aborted" || speechEvent.error === "no-speech") {
+        return;
+      }
+      callbacks.onError?.(speechEvent.error);
+    });
 
-  recognition.addEventListener("error", (event) => {
-    const speechEvent = event as unknown as SpeechRecognitionErrorEvent;
-    if (speechEvent.error === "aborted" || speechEvent.error === "no-speech") {
-      return;
-    }
-    callbacks.onError?.(speechEvent.error);
-  });
+    recognition.addEventListener("end", () => {
+      if (activeRecognition === recognition) {
+        activeRecognition = null;
+      }
+      callbacks.onEnd?.();
+    });
 
-  recognition.addEventListener("end", () => {
-    if (activeRecognition === recognition) {
-      activeRecognition = null;
-    }
-    callbacks.onEnd?.();
-  });
-
-  activeRecognition = recognition;
-  recognition.start();
-  return true;
+    activeRecognition = recognition;
+    recognition.start();
+    return true;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    callbacks.onError?.(msg);
+    return false;
+  }
 }
 
 export function stopStt(): void {
